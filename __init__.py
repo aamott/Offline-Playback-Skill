@@ -21,12 +21,15 @@ Otherwise it begins playing the music locally using the Mycroft-controlled
 hardware.  (Which, depending on the audio setup, might not be the main
 speaker on the equipment.)
 """
+
+# Adam Amott notes:
+# Replaced all instances of 'uri' with 'dir'
+#
 import re
 from mycroft.skills.core import intent_handler
 from mycroft.util.parse import match_one, fuzzy_match
 from mycroft.api import DeviceApi
 from mycroft.messagebus import Message
-from requests import HTTPError
 from adapt.intent import IntentBuilder
 
 import time
@@ -35,16 +38,29 @@ from subprocess import call, Popen, DEVNULL
 import signal
 from socket import gethostname
 
-import spotipy
+#For Amarok
+import sys
+import dbus
+import glib
+import os
+import psutil
+from traceback import print_exc
+from mycroft.skills.audioservice import AudioService
+
+#not needed
+"""
+#import spotipy
 from .spotify import (MycroftSpotifyCredentials, SpotifyConnect,
                       get_album_info, get_artist_info, get_song_info)
+"""
 import random
 
 from mycroft.skills.common_play_skill import CommonPlaySkill, CPSMatchLevel
 
 from enum import Enum
 
-
+#not needed
+"""
 class DeviceType(Enum):
     MYCROFT = 1
     DEFAULT = 2
@@ -60,17 +76,18 @@ class SpotifyPlaybackError(Exception):
 class NoSpotifyDevicesError(Exception):
     pass
 
-
+"""
 class PlaylistNotFoundError(Exception):
     pass
 
-
+#not needed
+"""
 class SpotifyNotAuthorizedError(Exception):
     pass
 
-
 # Platforms for which the skill should start the spotify player
 MANAGED_PLATFORMS = ['mycroft_mark_1', 'mycroft_mark_2pi']
+"""
 # Return value definition indication nothing was found
 # (confidence None, data None)
 NOTHING_FOUND = (None, 0.0)
@@ -96,7 +113,7 @@ def best_result(results):
         results.reverse()
         return sorted(results, key=lambda x: x[0])[-1]
 
-
+#important
 def best_confidence(title, query):
     """Find best match for a title against a query.
 
@@ -116,13 +133,14 @@ def best_confidence(title, query):
     return max(fuzzy_match(best, query),
                fuzzy_match(best_stripped, query))
 
-
+"""
+#not needed
 def update_librespot():
     try:
         call(["bash", join(dirname(abspath(__file__)), "requirements.sh")])
     except Exception as e:
         print('Librespot Update failed, {}'.format(repr(e)))
-
+"""
 
 def status_info(status):
     """Return track, artist, album tuple from spotify status.
@@ -148,13 +166,15 @@ def status_info(status):
     return track, artist, album
 
 
-class SpotifySkill(CommonPlaySkill):
+class PlayLocallySkill(CommonPlaySkill):
     """Spotify control through the Spotify Connect API."""
+    """But now we're making it play locally with Amarok or something"""
 
     def __init__(self):
-        super(SpotifySkill, self).__init__()
+        super(PlayLocallySkill, self).__init__()
+        self.audio_service = AudioService(self.bus)
         self.index = 0
-        self.spotify = None
+        self.offline_player = None
         self.process = None
         self.device_name = None
         self.dev_id = None
@@ -162,8 +182,9 @@ class SpotifySkill(CommonPlaySkill):
         self.ducking = False
         self.is_player_remote = False   # when dev is remote control instance
         self.mouth_text = None
-        self.librespot_starting = False
-        self.librespot_failed = False
+        self.music_player_starting = False
+        self.music_player_failed = False
+        # ^ My code ^
 
         self.__device_list = None
         self.__devices_fetched = 0
@@ -174,10 +195,12 @@ class SpotifySkill(CommonPlaySkill):
         self._playlists = None
         self.saved_tracks = None
         self.regexes = {}
-        self.last_played_type = None  # The last uri type that was started
+        self.last_played_type = None  # The last dir type that was started
         self.is_playing = False
 
     def translate_regex(self, regex):
+        """If the regex is not already in regexes,
+         look for regex files and put them in self.regexes """
         if regex not in self.regexes:
             path = self.find_resource(regex + '.regex')
             if path:
@@ -186,63 +209,84 @@ class SpotifySkill(CommonPlaySkill):
                 self.regexes[regex] = string
         return self.regexes[regex]
 
-    def launch_librespot(self):
-        """Launch the librespot binary for the Mark-1."""
-        self.librespot_starting = True
-        path = self.settings.get('librespot_path', None)
-        if self.platform in MANAGED_PLATFORMS and not path:
-            path = 'librespot'
+    #My own module
+    def get_path():
+        """find the path for the specified player"""
+        """Right now, just return, "amarok", but allow for more later"""
+        return amarok
 
+    """#not needed
+    def launch_librespot(self):
+    """ #replaced with below line
+    def launch_player(self):
+        """Launch the librespot binary for the Mark-1."""
+        """Launch the player binary for the Mark-1"""
+        self.music_player_starting = True
+        #path = self.settings.get('librespot_path', None)
+        path = get_path() #Instead of that ^, let's do this
+
+        """ #not needed
         if (path and self.device_name and
                 'user' in self.settings and 'password' in self.settings):
-
+        """
+        #if path in self.settings: #instead of that ^, this line. We need no passwd
             # Disable librespot logging if not specifically requested
             log_level = self.config_core.get('log_level', '')
-            if 'librespot_log' in self.settings or log_level == 'DEBUG':
+            if 'offline_music_player_log' in self.settings or log_level == 'DEBUG':
                 outs = None
             else:
                 outs = DEVNULL
 
-            # TODO: Error message when provided username/password don't work
+            """
             self.process = Popen([path, '-n', self.device_name,
                                   '-u', self.settings['user'],
                                   '-p', self.settings['password']],
                                  stdout=outs, stderr=outs)
+            """
+            #do this instead of that ^
+            self.process = Popen([path, '-n'],
+                                 stdout=outs, stderr=outs)
 
             time.sleep(3)  # give libreSpot time to start-up
             if self.process and self.process.poll() is not None:
-                self.log.error('librespot failed to start.')
-                # libreSpot shut down immediately.  Bad user/password?
-                if self.settings.get('user'):
-                    self.librespot_failed = True
+                self.log.error(path, 'failed to start.')
+                self.music_player_failed = True
                 self.process = None
-                self.librespot_starting = False
+                self.music_player_starting = False
                 return
 
             # Lower the volume since max volume sounds terrible on the Mark-1
             dev = self.device_by_name(self.device_name)
             if dev:
-                self.spotify.volume(dev['id'], self.DEFAULT_VOLUME)
-        self.librespot_starting = False
+                self.offline_player.volume(dev['id'], self.DEFAULT_VOLUME)
+        self.music_player_starting = False
 
     def initialize(self):
         # Make sure the spotify login scheduled event is shutdown
         super().initialize()
-        self.cancel_scheduled_event('SpotifyLogin')
+        #not needed
+        #self.cancel_scheduled_event('SpotifyLogin')
+
         # Setup handlers for playback control messages
         self.add_event('mycroft.audio.service.next', self.next_track)
         self.add_event('mycroft.audio.service.prev', self.prev_track)
         self.add_event('mycroft.audio.service.pause', self.pause)
         self.add_event('mycroft.audio.service.resume', self.resume)
+
+        #This ain't needed. not needed
+        """
         # Check and then monitor for credential changes
         self.settings.set_changed_callback(self.on_websettings_changed)
         # Retry in 5 minutes
         self.schedule_repeating_event(self.on_websettings_changed,
                                       None, 5 * 60, name='SpotifyLogin')
+
         if self.platform in MANAGED_PLATFORMS:
             update_librespot()
         self.on_websettings_changed()
-
+        """ #and we toasted that setting right up there. The module in gone
+    #not needed. Not an online web service
+    """
     def on_websettings_changed(self):
         # Only attempt to load credentials if the username has been set
         # will limit the accesses to the api.
@@ -258,15 +302,18 @@ class SpotifySkill(CommonPlaySkill):
             if 'user' in self.settings and 'password' in self.settings:
                 if self.process:
                     self.stop_librespot()
-                self.launch_librespot()
+                self.launch_player()
 
             # Refresh saved tracks
             # We can't get this list when the user asks because it takes too long
             # and causes mycroft-playback-control.mycroftai:PlayQueryTimeout
             self.refresh_saved_tracks()
+    """
 
+    #not needed. No credentials needed for an offline program
+    """
     def load_credentials(self):
-        """Retrieve credentials from the backend and connect to Spotify."""
+        ""Retrieve credentials from the backend and connect to Spotify.""
         try:
             creds = MycroftSpotifyCredentials(self.OAUTH_ID)
             self.spotify = SpotifyConnect(client_credentials_manager=creds)
@@ -283,7 +330,10 @@ class SpotifySkill(CommonPlaySkill):
             # Should be safe to set device_name here since home has already
             # been connected
             self.device_name = DeviceApi().get().get('name')
+    """
 
+    #not needed. No failed authorizations in offline module
+    """
     def failed_auth(self):
         if 'user' not in self.settings:
             self.log.error('Settings hasn\'t been received yet')
@@ -296,7 +346,7 @@ class SpotifySkill(CommonPlaySkill):
             # Assume password changed or there is a typo
             self.log.error('User info has been set but Auth failed.')
             self.speak_dialog('NotAuthorized')
-
+    """
     ######################################################################
     # Handle auto ducking when listener is started.
 
@@ -307,7 +357,7 @@ class SpotifySkill(CommonPlaySkill):
 
         TODO: Evaluate the Idle check logic
         """
-        if (self.spotify.is_playing() and self.is_player_remote and
+        if (self.offline_player.is_playing() and #self.is_player_remote and #It's not a player remote anymore
                 self.settings.get('use_ducking', False)):
             self.__pause()
             self.ducking = True
@@ -325,7 +375,7 @@ class SpotifySkill(CommonPlaySkill):
             return
 
         active = self.enclosure.display_manager.get_active()
-        if not active == '' or active == 'SpotifySkill':
+        if not active == '' or active == 'PlayLocallySkill':
             # No activity, start to fall asleep
             self.idle_count += 1
 
@@ -333,7 +383,7 @@ class SpotifySkill(CommonPlaySkill):
                 # Resume playback after 5 seconds of being idle
                 self.cancel_scheduled_event('IdleCheck')
                 self.ducking = False
-                self.resume()
+                self.audio_service.resume()
         else:
             self.idle_count = 0
 
@@ -348,18 +398,18 @@ class SpotifySkill(CommonPlaySkill):
         # Schedule a new one every 5 seconds to monitor/update display
         self.schedule_repeating_event(self._update_display,
                                       None, 5,
-                                      name='MonitorSpotify')
+                                      name='MonitorOfflinePlayer')
         self.add_event('recognizer_loop:record_begin',
                        self.handle_listener_started)
 
     def stop_monitor(self):
         # Clear any existing event
-        self.cancel_scheduled_event('MonitorSpotify')
+        self.cancel_scheduled_event('MonitorOfflinePlayer')
 
     def _update_display(self, message):
         # Checks once a second for feedback
-        status = self.spotify.status() if self.spotify else {}
-        self.is_playing = self.spotify.is_playing()
+        status = self.offline_player.status() if self.offline_player else {}
+        self.is_playing = self.offline_player.is_playing()
 
         if not status or not status.get('is_playing'):
             self.stop_monitor()
@@ -408,15 +458,17 @@ class SpotifySkill(CommonPlaySkill):
         """Handler for common play framework Query."""
         # Not ready to play
         if not self.playback_prerequisits_ok():
-            self.log.debug('Spotify is not available to play')
-            if 'spotify' in phrase:
+            self.log.debug('Offline Player is not available to play')
+            if 'offline' in phrase:
+                return phrase, CPSMatchLevel.GENERIC
+            elif 'locally' in phrase:
                 return phrase, CPSMatchLevel.GENERIC
             else:
                 return None
 
-        spotify_specified = 'spotify' in phrase
-        bonus = 0.1 if spotify_specified else 0.0
-        phrase = re.sub(self.translate_regex('on_spotify'), '', phrase)
+        offline_specified = 'offline' in phrase or 'locally' in phrase
+        bonus = 0.1 if offline_specified else 0.0
+        phrase = re.sub(self.translate_regex('offline'), '', phrase) #used to translate, "spotify"
 
         confidence, data = self.continue_playback(phrase, bonus)
         if not data:
@@ -425,11 +477,11 @@ class SpotifySkill(CommonPlaySkill):
                 confidence, data = self.generic_query(phrase, bonus)
 
         if data:
-            self.log.info('Spotify confidence: {}'.format(confidence))
+            self.log.info('Offline Player confidence: {}'.format(confidence))
             self.log.info('              data: {}'.format(data))
 
             if data.get('type') in ['saved_tracks', 'album', 'artist', 'track', 'playlist']:
-                if spotify_specified:
+                if offline_specified:
                     # " play great song on spotify'
                     level = CPSMatchLevel.EXACT
                 else:
@@ -443,7 +495,7 @@ class SpotifySkill(CommonPlaySkill):
                         level = CPSMatchLevel.TITLE
                     phrase += ' on spotify'
             elif data.get('type') == 'continue':
-                if spotify_specified > 0:
+                if offline_specified > 0:
                     # "resume playback on spotify"
                     level = CPSMatchLevel.EXACT
                 else:
@@ -451,16 +503,16 @@ class SpotifySkill(CommonPlaySkill):
                     level = CPSMatchLevel.GENERIC
                     phrase += ' on spotify'
             else:
-                self.log.warning('Unexpected spotify type: '
+                self.log.warning('Unexpected Offline Player type: '
                                  '{}'.format(data.get('type')))
                 level = CPSMatchLevel.GENERIC
 
             return phrase, level, data
         else:
-            self.log.debug('Couldn\'t find anything to play on Spotify')
+            self.log.debug('Couldn\'t find anything to play on Offline Player')
 
     def continue_playback(self, phrase, bonus):
-        if phrase.strip() == 'spotify':
+        if phrase.strip() == 'offline' or phrase.strip() == 'locally':
             return (1.0,
                     {
                         'data': None,
@@ -472,7 +524,7 @@ class SpotifySkill(CommonPlaySkill):
 
     def specific_query(self, phrase, bonus):
         """
-        Check if the phrase can be matched against a specific spotify request.
+        Check if the phrase can be matched against a specific offline request.
 
         This includes asking for saved items, playlists, albums, artists or songs.
 
@@ -532,9 +584,9 @@ class SpotifySkill(CommonPlaySkill):
         self.log.info('Checking users playlists')
         playlist, conf = self.get_best_user_playlist(phrase)
         if playlist:
-            uri = self.playlists[playlist]
+            dir = self.playlists[playlist]
             data = {
-                        'data': uri,
+                        'data': dir,
                         'name': playlist,
                         'type': 'playlist'
                    }
@@ -587,7 +639,7 @@ class SpotifySkill(CommonPlaySkill):
         Returns: Tuple with confidence and data or NOTHING_FOUND
         """
         bonus += 0.1
-        data = self.spotify.search(artist, type='artist')
+        data = self.offline_player.search(artist, type='artist')
         if data and data['artists']['items']:
             best = data['artists']['items'][0]['name']
             confidence = fuzzy_match(best, artist.lower()) + bonus
@@ -604,7 +656,7 @@ class SpotifySkill(CommonPlaySkill):
     def query_album(self, album, bonus):
         """Try to find an album.
 
-        Searches Spotify by album and artist if available.
+        Searches Offline Player by album and artist if available.
 
         Arguments:
             album (str): Album to search for
@@ -620,7 +672,7 @@ class SpotifySkill(CommonPlaySkill):
             bonus += 0.1
         else:
             album_search = album
-        data = self.spotify.search(album_search, type='album')
+        data = self.offline_player.search(album_search, type='album')
         if data and data['albums']['items']:
             best = data['albums']['items'][0]['name'].lower()
             confidence = best_confidence(best, album)
@@ -649,8 +701,8 @@ class SpotifySkill(CommonPlaySkill):
         """
         result, conf = self.get_best_user_playlist(playlist)
         if playlist and conf > 0.5:
-            uri = self.playlists[result]
-            return (conf, {'data': uri,
+            dir = self.playlists[result]
+            return (conf, {'data': dir,
                            'name': playlist,
                            'type': 'playlist'})
         else:
@@ -675,7 +727,7 @@ class SpotifySkill(CommonPlaySkill):
         else:
             song_search = song
 
-        data = self.spotify.search(song_search, type='track')
+        data = self.offline_player.search(song_search, type='track')
         if data and len(data['tracks']['items']) > 0:
             tracks = [(best_confidence(d['name'], song), d)
                       for d in data['tracks']['items']]
@@ -696,48 +748,33 @@ class SpotifySkill(CommonPlaySkill):
     def CPS_start(self, phrase, data):
         """Handler for common play framework start playback request."""
         try:
-            if not self.spotify:
-                raise SpotifyNotAuthorizedError
             # Wait for librespot to start
-            if self.librespot_starting:
-                self.log.info('Restarting Librespot...')
+            if self.music_player_starting:
+                self.log.info('Restarting offline player...')
                 for i in range(10):
                     time.sleep(0.5)
-                    if not self.librespot_starting:
+                    if not self.music_player_starting:
                         break
                 else:
-                    self.log.error('LIBRESPOT NOT STARTED')
+                    self.log.error('OFFLINE PLAYER NOT STARTED')
 
-            dev = self.get_default_device()
-            if not dev:
-                raise NoSpotifyDevicesError
+            #dev = self.get_default_device()
+            #Sorry joe. Can't do that. Just one device here
 
             if data['type'] == 'continue':
                 self.acknowledge()
-                self.continue_current_playlist(dev)
+                self.continue_current_playlist()
             elif data['type'] == 'playlist':
-                self.start_playlist_playback(dev, data['name'],
+                self.start_playlist_playback( data['name'],
                                              data['data'])
             else:  # artist, album track
                 self.log.info('playing {}'.format(data['type']))
-                self.play(dev, data=data['data'], data_type=data['type'])
+                self.play(data=data['data'], data_type=data['type'])
             self.enable_playing_intents()
             if data.get('type') and data['type'] != 'continue':
                 self.last_played_type = data['type']
             self.is_playing = True
 
-        except NoSpotifyDevicesError:
-            if self.librespot_failed:
-                self.speak_dialog('FailedToStart')
-                self.librespot_failed = False
-            else:
-                self.log.error("Unable to get a default device while trying "
-                               "to play something.")
-                self.speak_dialog(
-                    'PlaybackFailed',
-                    {'reason': self.translate('NoDevicesAvailable')})
-        except SpotifyNotAuthorizedError:
-            self.failed_auth()
         except PlaylistNotFoundError:
             self.speak_dialog('PlaybackFailed',
                               {'reason': self.translate('PlaylistNotFound')})
@@ -747,7 +784,7 @@ class SpotifySkill(CommonPlaySkill):
 
     def create_intents(self):
         """Setup the spotify intents."""
-        intent = IntentBuilder('').require('Spotify').require('Search') \
+        intent = IntentBuilder('').require('OfflinePlayer').require('Search') \ #Said .require('Spotify')
                                   .require('For')
         self.register_intent(intent, self.search_spotify)
         self.register_intent_file('ShuffleOn.intent', self.shuffle_on)
@@ -774,12 +811,12 @@ class SpotifySkill(CommonPlaySkill):
     @property
     def playlists(self):
         """Playlists, cached for 5 minutes."""
-        if not self.spotify:
+        if not self.offline_player: #Come back and see if this line is necessary
             return []  # No connection, no playlists
         now = time.time()
         if not self._playlists or (now - self.__playlists_fetched > 5 * 60):
             self._playlists = {}
-            playlists = self.spotify.current_user_playlists().get('items', [])
+            playlists = self.offline_player.current_user_playlists().get('items', [])
             for p in playlists:
                 self._playlists[p['name'].lower()] = p
             self.__playlists_fetched = now
@@ -787,14 +824,15 @@ class SpotifySkill(CommonPlaySkill):
 
     def refresh_saved_tracks(self):
         """Saved tracks are cached for 4 hours."""
-        if not self.spotify:
+        if not self.offline_player: #Come back and see if this line is necessary
             return []
         now = time.time()
+        """
         if not self.saved_tracks or (now - self.__saved_tracks_fetched > 4 * 60 * 60):
             saved_tracks = []
             offset = 0
             while True:
-                batch = self.spotify.current_user_saved_tracks(50, offset)
+                batch = self.offline_player.current_user_saved_tracks(50, offset)
                 for item in batch.get('items', []):
                     saved_tracks.append(item['track'])
                 offset += 50
@@ -803,26 +841,29 @@ class SpotifySkill(CommonPlaySkill):
 
             self.saved_tracks = saved_tracks
             self.__saved_tracks_fetched = now
+        """
 
+    #Not needed
+    """
     @property
     def devices(self):
-        """Devices, cached for 60 seconds."""
-        if not self.spotify:
+        #Devices, cached for 60 seconds.""
+        if not self.offline_player:
             return []  # No connection, no devices
         now = time.time()
         if not self.__device_list or (now - self.__devices_fetched > 60):
-            self.__device_list = self.spotify.get_devices()
+            self.__device_list = self.offline_player.get_devices()
             self.__devices_fetched = now
         return self.__device_list
 
     def device_by_name(self, name):
-        """Get a Spotify devices from the API.
+        "Get a Spotify devices from the API.
 
         Arguments:
             name (str): The device name (fuzzy matches)
         Returns:
             (dict) None or the matching device's description
-        """
+        "
         devices = self.devices
         if devices and len(devices) > 0:
             # Otherwise get a device with the selected name
@@ -832,12 +873,13 @@ class SpotifySkill(CommonPlaySkill):
                 return devices_by_name[key]
         return None
 
+    #not needed
     def get_default_device(self):
-        """Get preferred playback device."""
-        if self.spotify:
+        ""Get preferred playback device. But don't really.
+        if self.offline_player:
             # When there is an active Spotify device somewhere, use it
             if (self.devices and len(self.devices) > 0 and
-                    self.spotify.is_playing()):
+                    self.offline_player.is_playing()):
                 for dev in self.devices:
                     if dev['is_active']:
                         self.log.info('Playing on an active device '
@@ -850,31 +892,28 @@ class SpotifySkill(CommonPlaySkill):
             device_type = DeviceType.NOTFOUND
             if default_device:
                 dev = self.device_by_name(default_device)
-                self.is_player_remote = True
                 device_type = DeviceType.DEFAULT
             # if not set or missing try playing on this device
             if not dev:
                 dev = self.device_by_name(self.device_name)
-                self.is_player_remote = False
                 device_type = DeviceType.MYCROFT
             # if not check if a desktop spotify client is playing
             if not dev:
                 dev = self.device_by_name(gethostname())
-                self.is_player_remote = False
                 device_type = DeviceType.DESKTOP
 
             # use first best device if none of the prioritized works
             if not dev and len(self.devices) > 0:
                 dev = self.devices[0]
-                self.is_player_remote = True  # ?? Guessing it is remote
                 device_type = DeviceType.FIRSTBEST
 
             if dev and not dev['is_active']:
-                self.spotify.transfer_playback(dev['id'], False)
+                self.offline_player.transfer_playback(dev['id'], False)
             self.log.info('Device detected: {}'.format(device_type))
             return dev
 
         return None
+        """
 
     def get_best_user_playlist(self, playlist):
         """Get best playlist matching the provided name
@@ -893,7 +932,7 @@ class SpotifySkill(CommonPlaySkill):
         return NOTHING_FOUND
 
     def get_best_public_playlist(self, playlist):
-        data = self.spotify.search(playlist, type='playlist')
+        data = self.offline_player.search(playlist, type='playlist')
         if data and data['playlists']['items']:
             best = data['playlists']['items'][0]
             confidence = fuzzy_match(best['name'].lower(), playlist)
@@ -906,54 +945,53 @@ class SpotifySkill(CommonPlaySkill):
     def continue_current_playlist(self, dev):
         """Send the play command to the selected device."""
         time.sleep(2)
-        self.spotify_play(dev['id'])
+        self.offline_player_play() #Not multiple devices to choose from dev['id'])
 
     def playback_prerequisits_ok(self):
         """Check that playback is possible, launch client if neccessary."""
-        if self.spotify is None:
+        if self.offline_player is None:
             return False
 
+        #not needed
+        """
         devs = [d['name'] for d in self.devices]
         if self.process and self.device_name not in devs:
             self.log.info('Librespot not responding, restarting...')
             self.stop_librespot()
             self.__devices_fetched = 0  # Make sure devices are fetched again
+        """
         if not self.process:
-            self.schedule_event(self.launch_librespot, 0,
-                                name='launch_librespot')
+            self.schedule_event(self.launch_player, 0,
+                                name='launch_player')
         return True
 
-    def spotify_play(self, dev_id, uris=None, context_uri=None):
-        """Start spotify playback and log any exceptions."""
+    #come back
+    def offline_player_play(self, files=None, context_dir=None): #dev_id, dirs=None, context_dir=None):
+        """Start playback and log any exceptions."""
         try:
-            self.log.info(u'spotify_play: {}'.format(dev_id))
-            self.spotify.play(dev_id, uris, context_uri)
-            self.start_monitor()
-            self.dev_id = dev_id
-        except spotipy.SpotifyException as e:
-            # TODO: Catch other conditions?
-            if e.http_status == 403:
-                self.log.error('Play command returned 403, play is likely '
-                               'already in progress. \n {}'.format(repr(e)))
+            self.log.info(u'Offline_play')
+            if files != None:
+                self.audio_service.play(files)#dev_id, dirs, context_dir)
             else:
-                raise SpotifyNotAuthorizedError from e
+                self.audio_service.resume()
+            self.start_monitor()
         except Exception as e:
             self.log.exception(e)
             raise
 
-    def start_playlist_playback(self, dev, name, uri):
+    def start_playlist_playback(self, dev, name, dir):
         name = name.replace('|', ':')
-        if uri:
-            self.log.info(u'playing {} using {}'.format(name, dev['name']))
+        if dir:
+            self.log.info(u'playing {}'.format(name))
             self.speak_dialog('ListeningToPlaylist',
                               data={'playlist': name})
             time.sleep(2)
-            self.spotify_play(dev['id'], context_uri=uri['uri'])
+            self.offline_player_play(context_dir=dir['dir'])
         else:
             self.log.info('No playlist found')
             raise PlaylistNotFoundError
 
-    def play(self, dev, data, data_type='track', genre_name=None):
+    def play(self, data, data_type='track', genre_name=None):#dev, data, data_type='track', genre_name=None):
         """
         Plays the provided data in the manner appropriate for 'data_type'
         If the type is 'genre' then genre_name should be specified to populate
@@ -962,11 +1000,11 @@ class SpotifySkill(CommonPlaySkill):
         A 'track' is played as just an individual track.
         An 'album' queues up all the tracks contained in that album and starts
         with the first track.
-        A 'genre' expects data returned from self.spotify.search, and will use
+        A 'genre' expects data returned from self.offline_player.search, and will use
         that genre to play a selection similar to it.
 
         Args:
-            data (dict):        Data returned by self.spotify.search
+            data (dict):        Data returned by self.spotify.search (but now self.offline_player.search)
             data_type (str):    The type of data contained in the passed-in
                                 object. 'saved_tracks', 'track', 'album',
                                 or 'genre' are currently supported.
@@ -978,49 +1016,49 @@ class SpotifySkill(CommonPlaySkill):
                 # Grab 200 random songs
                 # Spotify doesn't like it when we send thousands of songs
                 items = random.sample(self.saved_tracks, 200)
-                uris = []
+                files = []
                 for item in items:
-                    uris.append(item['uri'])
+                    files.append(item['dir'])
                 self.speak_dialog('ListeningToSavedSongs')
                 time.sleep(2)
-                self.spotify_play(dev['id'], uris=uris)
+                self.offline_player_play(files=files)
             elif data_type == 'track':
-                (song, artists, uri) = get_song_info(data)
+                (song, artists, dir) = get_song_info(data)
                 self.speak_dialog('ListeningToSongBy',
                                   data={'tracks': song,
                                         'artist': artists[0]})
                 time.sleep(2)
-                self.spotify_play(dev['id'], uris=[uri])
+                self.offline_player_play(files=[dir])
             elif data_type == 'artist':
-                (artist, uri) = get_artist_info(data)
+                (artist, dir) = get_artist_info(data)
                 self.speak_dialog('ListeningToArtist',
                                   data={'artist': artist})
                 time.sleep(2)
-                self.spotify_play(dev['id'], context_uri=uri)
+                self.offline_player_play(context_dir=dir)
             elif data_type == 'album':
-                (album, artists, uri) = get_album_info(data)
+                (album, artists, dir) = get_album_info(data)
                 self.speak_dialog('ListeningToAlbumBy',
                                   data={'album': album,
                                         'artist': artists[0]})
                 time.sleep(2)
-                self.spotify_play(dev['id'], context_uri=uri)
+                self.offline_player_play(context_dir=dir)
             elif data_type == 'genre':
                 items = data['tracks']['items']
                 random.shuffle(items)
-                uris = []
+                files = []
                 for item in items:
-                    uris.append(item['uri'])
+                    files.append(item['dir'])
                 data = {'genre': genre_name, 'track': items[0]['name'],
                         'artist': items[0]['artists'][0]['name']}
                 self.speak_dialog('ListeningToGenre', data)
                 time.sleep(2)
-                self.spotify_play(dev['id'], uris=uris)
+                self.offline_player_play(files=files)
             else:
                 self.log.error('wrong data_type')
                 raise ValueError("Invalid type")
         except Exception as e:
             self.log.error("Unable to obtain the name, artist, "
-                           "and/or URI information while asked to play "
+                           "and/or dir information while asked to play "
                            "something. " + str(e))
             raise
 
@@ -1036,9 +1074,9 @@ class SpotifySkill(CommonPlaySkill):
         res = None
         if search_type == 'album' and len(query.split('by')) > 1:
             title, artist = query.split('by')
-            result = self.spotify.search(title, type=search_type)
+            result = self.offline_player.search(title, type=search_type)
         else:
-            result = self.spotify.search(query, type=search_type)
+            result = self.offline_player.search(query, type=search_type)
 
         if search_type == 'album':
             if len(result['albums']['items']) > 0:
@@ -1063,34 +1101,20 @@ class SpotifySkill(CommonPlaySkill):
         """ Intent handler for "search spotify for X". """
 
         try:
-            dev = self.get_default_device()
-            if not dev:
-                raise NoSpotifyDevicesError
-
             utterance = message.data['utterance']
             if len(utterance.split(self.translate('ForAlbum'))) == 2:
                 query = utterance.split(self.translate('ForAlbum'))[1].strip()
-                data = self.spotify.search(query, type='album')
-                self.play(dev, data=data, data_type='album')
+                data = self.offline_player.search(query, type='album')
+                self.play(data=data, data_type='album')
             elif len(utterance.split(self.translate('ForArtist'))) == 2:
                 query = utterance.split(self.translate('ForArtist'))[1].strip()
-                data = self.spotify.search(query, type='artist')
-                self.play(dev, data=data, data_type='artist')
+                data = self.offline_player.search(query, type='artist')
+                self.play(data=data, data_type='artist')
             else:
                 for_word = ' ' + self.translate('For')
                 query = for_word.join(utterance.split(for_word)[1:]).strip()
-                data = self.spotify.search(query, type='track')
-                self.play(dev, data=data, data_type='track')
-        except NoSpotifyDevicesError:
-            self.log.error("Unable to get a default device while trying "
-                           "to play something.")
-            self.speak_dialog(
-                'PlaybackFailed',
-                {'reason': self.translate('NoDevicesAvailable')})
-        except SpotifyNotAuthorizedError:
-            self.speak_dialog(
-                'PlaybackFailed',
-                {'reason': self.translate('NotAuthorized')})
+                data = self.offline_player.search(query, type='track')
+                self.play(data=data, data_type='track')
         except PlaylistNotFoundError:
             self.speak_dialog(
                 'PlaybackFailed',
@@ -1100,27 +1124,28 @@ class SpotifySkill(CommonPlaySkill):
 
     def shuffle_on(self):
         """ Turn on shuffling """
-        if self.spotify:
-            self.spotify.shuffle(True)
+        if self.offline_player:
+            self.offline_player.shuffle(True)
         else:
             self.failed_auth()
 
     def shuffle_off(self):
         """ Turn off shuffling """
-        if self.spotify:
-            self.spotify.shuffle(False)
+        if self.offline_player:
+            self.offline_player.shuffle(False)
         else:
             self.failed_auth()
 
+    #Come back to these. AudioService may have a way to return status.
     def song_info(self, message):
         """ Speak song info. """
-        status = self.spotify.status() if self.spotify else None
+        status = self.offline_player.status() if self.offline_player else None
         song, artist, _ = status_info(status)
         self.speak_dialog('CurrentSong', {'song': song, 'artist': artist})
 
     def album_info(self, message):
         """ Speak album info. """
-        status = self.spotify.status() if self.spotify else None
+        status = self.offline_player.status() if self.offline_player else None
         _, _, album = status_info(status)
         if self.last_played_type == 'album':
             self.speak_dialog('CurrentAlbum', {'album': album})
@@ -1129,16 +1154,16 @@ class SpotifySkill(CommonPlaySkill):
 
     def artist_info(self, message):
         """ Speak artist info. """
-        status = self.spotify.status() if self.spotify else None
+        status = self.offline_player.status() if self.offline_player else None
         if status:
             _, artist, _ = status_info(status)
             self.speak_dialog('CurrentArtist', {'artist': artist})
 
     def __pause(self):
         # if authorized and playback was started by the skill
-        if self.spotify and self.dev_id:
-            self.log.info('Pausing Spotify...')
-            self.spotify.pause(self.dev_id)
+        if self.audio_service:
+            self.log.info('Pausing Music Player...')
+            self.audio_service.pause()
 
     def pause(self, message=None):
         """ Handler for playback control pause. """
@@ -1148,16 +1173,16 @@ class SpotifySkill(CommonPlaySkill):
     def resume(self, message=None):
         """ Handler for playback control resume. """
         # if authorized and playback was started by the skill
-        if self.spotify and self.dev_id:
-            self.log.info('Resume Spotify')
-            self.spotify_play(self.dev_id)
+        if self.audio_service:
+            self.log.info('Resume Music Player')
+            self.audio_service.resume()
 
     def next_track(self, message):
         """ Handler for playback control next. """
         # if authorized and playback was started by the skill
-        if self.spotify and self.dev_id:
-            self.log.info('Next Spotify track')
-            self.spotify.next(self.dev_id)
+        if self.audio_service:
+            self.log.info('Next track')
+            self.audio_service.next()
             self.start_monitor()
             return True
         return False
@@ -1165,44 +1190,10 @@ class SpotifySkill(CommonPlaySkill):
     def prev_track(self, message):
         """ Handler for playback control prev. """
         # if authorized and playback was started by the skill
-        if self.spotify and self.dev_id:
+        if self.audio_service:
             self.log.info('Previous Spotify track')
-            self.spotify.prev(self.dev_id)
+            self.audio_service.prev()
             self.start_monitor()
-
-    @intent_handler(IntentBuilder('').require('Spotify').require('Device'))
-    def list_devices(self, message):
-        """ List available devices. """
-        if self.spotify:
-            devices = [d['name'] for d in self.spotify.get_devices()]
-            if len(devices) == 1:
-                self.speak(devices[0])
-            elif len(devices) > 1:
-                self.speak_dialog('AvailableDevices',
-                                  {'devices': ' '.join(devices[:-1]) + ' ' +
-                                              self.translate('And') + ' ' +
-                                              devices[-1]})
-            else:
-                self.speak_dialog('NoDevicesAvailable')
-        else:
-            self.failed_auth()
-
-    @intent_handler(IntentBuilder('').require('Transfer').require('Spotify')
-                                     .require('ToDevice'))
-    def transfer_playback(self, message):
-        """ Move playback from one device to another. """
-        if self.spotify and self.spotify.is_playing():
-            dev = self.device_by_name(message.data['ToDevice'])
-            if dev:
-                self.log.info('Transfering playback to {}'.format(dev['name']))
-                self.spotify.transfer_playback(dev['id'])
-            else:
-                self.speak_dialog('DeviceNotFound',
-                                  {'name': message.data['ToDevice']})
-        elif not self.spotify:
-            self.failed_auth()
-        else:
-            self.speak_dialog('NothingPlaying')
 
     def handle_stop(self, message):
         self.bus.emit(Message('mycroft.stop'))
@@ -1214,43 +1205,28 @@ class SpotifySkill(CommonPlaySkill):
             self.log.error('Pause failed: {}'.format(repr(e)))
             dev = self.get_default_device()
             if dev:
-                self.log.info('Retrying with {}'.format(dev['name']))
-                self.dev_id = dev['id']
+                self.log.info('Retrying')
                 self.pause(None)
-
-            # Clear playing device id
-        self.dev_id = None
         return True
 
     def stop(self):
         """ Stop playback. """
-        if self.spotify and self.is_playing:
-            if self.dev_id:
-                self.schedule_event(self.do_stop, 0, name='StopSpotify')
+        if self.audio_service and self.is_playing:
+            self.schedule_event(self.do_stop, 0, name='StopOfflinePlayer')
             return True
         else:
             return False
 
-    def stop_librespot(self):
-        """ Send Terminate signal to librespot if it's running. """
-        if self.process and self.process.poll() is None:
-            self.process.send_signal(signal.SIGTERM)
-            self.process.communicate()  # Communicate to remove zombie
-
-        self.process = None
-
     def shutdown(self):
         """ Remove the monitor at shutdown. """
-        self.cancel_scheduled_event('SpotifyLogin')
         self.stop_monitor()
-        self.stop_librespot()
 
         # Do normal shutdown procedure
-        super(SpotifySkill, self).shutdown()
+        super(PlayLocallySkill, self).shutdown()
 
 
 def create_skill():
-    return SpotifySkill()
+    return PlayLocallySkill()
 
 # WORKING COMMANDS:
 # play spotify

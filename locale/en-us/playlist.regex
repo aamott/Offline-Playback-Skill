@@ -1,1 +1,1 @@
-(the|my) (spotify |)playlist (?P<playlist>.+)
+(the|my) (offline|local)playlist (?P<playlist>.+)
