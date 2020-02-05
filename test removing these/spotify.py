@@ -1,5 +1,4 @@
 import spotipy
-from spotipy.oauth2 import SpotifyClientCredentials
 from requests import HTTPError
 import time
 
@@ -251,6 +250,3 @@ def get_song_info(data):
     return (data['tracks']['items'][0]['name'],
             [a['name'] for a in data['tracks']['items'][0]['artists']],
             data['tracks']['items'][0]['uri'])
-
-
-

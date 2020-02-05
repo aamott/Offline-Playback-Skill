@@ -2,52 +2,39 @@
     "skillMetadata": {
         "sections": [
             {
-                "name": "Spotify Account",
+                "name": "Default Player",
                 "fields": [
                     {
                         "type": "label",
                         "value": "",
-                        "label": "You must have a Spotify Premium account to access music.  Provide your Spotify username/password and then Connect with the button below.<p/>"
+                        "label": "Later on, we will try to use this to let you choose your own default player in case you don''t want to use the default<p/>"
                     },
                     {
-                        "name": "user",
+                        "name": "AppName",
                         "type": "text",
-                        "label": "Username",
+                        "label": "Location of executable (or whatever you would type into the terminal to launch it)",
                         "value": "",
-                        "placeholder": "Spotify username"
-                    },
-                    {
-                        "name": "password",
-                        "type": "password",
-                        "label": "Password",
-                        "value": ""
+                        "placeholder": "executable file"
                     },
           {
             "type": "label",
             "value": "",
-            "label": "Click the Save button, then use the Connect button to authorize with Spotify.<p/>"
+            "label": "Click the Save button<p/>"
           },
           {
-            "name": "Spotify",
+            "name": "Music Player",
             "type": "oauth",
             "value": 1
           }
         ]
       },
       {
-        "name": "Remote Control Device",
+        "name": "Device settings",
         "fields": [
           {
             "type": "label",
             "value": "",
-            "label": "Playback normally occurs using Mycroft's speaker.  You can also use another Spotify device for playback and remotely control it using Mycroft.<p/>"
-          },
-          {
-            "name": "default_device",
-            "type": "text",
-            "label": "Spotify device",
-            "value": "",
-            "placeholder": "default (Mycroft's speaker)"
+            "label": "Playback normally occurs using Mycroft's speaker.<p/>"
           },
           {
             "type": "label",
@@ -66,4 +53,3 @@
     ]
   }
 }
-

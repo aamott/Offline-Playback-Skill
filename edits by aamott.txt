@@ -1,0 +1,12 @@
+Files edited:
+__init__.py
+requirements.sh
+requirements.txt
+settingsmeta.json
+
+Files created:
+song_database_manager.py
+ForGenre.dialog (in en-us and es-es)
+
+Files removed
+spotify.py
