@@ -3,6 +3,7 @@ __init__.py
 requirements.sh
 requirements.txt
 settingsmeta.json
+README.md
 
 Files created:
 song_database_manager.py
