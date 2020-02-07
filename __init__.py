@@ -15,31 +15,27 @@
 # First program by AdamAmott
 # A fork of the Mycroft Spotify skill
 
+import time
+from os.path import abspath, dirname, join
+from .song_database_manager import SongDatabase
+
 import re
 from mycroft.skills.core import intent_handler
 from mycroft.util.parse import match_one, fuzzy_match
-from mycroft.api import DeviceApi
 from mycroft.messagebus import Message
 from adapt.intent import IntentBuilder
 
-import time
-from os.path import abspath, dirname, join
-from subprocess import call, Popen, DEVNULL
-import signal
-from socket import gethostname
-from song_database_manager import SongDatabase
-#For Amarok
+#extras
 import sys
-import dbus
-import glib
 import os
 import psutil
 from traceback import print_exc
-from mycroft.skills.audioservice import AudioService
+
 
 import random
 
 from mycroft.skills.common_play_skill import CommonPlaySkill, CPSMatchLevel
+from mycroft.skills.audioservice import AudioService
 
 from enum import Enum
 
@@ -96,10 +92,7 @@ def status_info():
     Returns:
         tuple (track, artist, album)
      """
-    if audioservice:
-        return self.audioservice.track_info()
-    else:
-        return None
+    return "I don't think this should be here"
 
 
 class PlayLocallySkill(CommonPlaySkill):
@@ -107,18 +100,15 @@ class PlayLocallySkill(CommonPlaySkill):
 
     def __init__(self):
         super(PlayLocallySkill, self).__init__()
-        self.audio_service = AudioService(self.bus)
         self.song_database = SongDatabase()
         self.idle_count = 0
         self.ducking = False
         self.mouth_text = None
 
-        song_database.load_database()
-
         enclosure_config = self.config_core.get('enclosure')
         self.platform = enclosure_config.get('platform', 'unknown')
         self.DEFAULT_VOLUME = 80 if self.platform == 'mycroft_mark_1' else 100
-        self._playlists = song_database.playlists
+        self._playlists = self.song_database.playlists
         self.regexes = {}
         self.last_played_type = None  # The last dir type that was started
         self.is_playing = False
@@ -128,13 +118,7 @@ class PlayLocallySkill(CommonPlaySkill):
         self.shuffle = False #TODO: implement shuffle
         self.queue = {} # involved in shuffle
 
-        try:
-            self.preferred_service = self.audio_service.available_backends()['vlc']
-        except:
-            self.preferred_service = None #audioservice will take care of this
-
-        #info for use later. Will be removed later on
-        self.log.info(self.audio_service.available_backends())
+        
 
 
     def translate_regex(self, regex):
@@ -156,6 +140,17 @@ class PlayLocallySkill(CommonPlaySkill):
         self.add_event('mycroft.audio.service.prev', self.prev_track)
         self.add_event('mycroft.audio.service.pause', self.pause)
         self.add_event('mycroft.audio.service.resume', self.resume)
+        
+        # Set up music service stuff
+        self.audio_service = AudioService(self.bus)
+        self.song_database.load_database()
+        self.preferred_service = 'vlc' # TODO-- Hopefully we can figure out how to implement this. more music file types
+
+
+
+        #info for use later. Will be removed later on
+        self.log.info("#####################backends:"+ str(self.audio_service.available_backends()))
+
 
     ######################################################################
     # Handle auto ducking when listener is started.
@@ -165,7 +160,7 @@ class PlayLocallySkill(CommonPlaySkill):
 
         The ducking is enabled/disabled using the skill settings on home.
         """
-        if self.is_playing() and self.use_ducking:
+        if self.is_playing and self.use_ducking:
             self.__pause()
             self.ducking = True
 
@@ -215,9 +210,9 @@ class PlayLocallySkill(CommonPlaySkill):
 
     def _update_display(self, message):
         # Checks once a second for feedback
-        status = self.offline_player.status() if self.offline_player else {}
+        status = self.status()
 
-        if not status or not status.get('is_playing'):
+        if not status:
             self.stop_monitor()
             self.mouth_text = None
             self.enclosure.mouth_reset()
@@ -251,12 +246,18 @@ class PlayLocallySkill(CommonPlaySkill):
             self.mouth_text = text
             self.enclosure.mouth_text(text)
 
+    def status(self):
+        if self.audio_service:
+            return self.audio_service.track_info()
+        else:
+            return None
 
 
-    def CPS_send_status(self, artist='', track='', image=''):
+    def CPS_send_status(self, artist='', track='', album='', image=''):
         data = {'skill': self.name,
                 'artist': artist,
                 'track': track,
+                'album': album,
                 'image': image,
                 'status': None
                 }
@@ -264,17 +265,6 @@ class PlayLocallySkill(CommonPlaySkill):
 
     def CPS_match_query_phrase(self, phrase):
         """Handler for common play framework Query."""
-        """
-        # Not ready to play
-        if not self.playback_prerequisits_ok():
-            self.log.debug('Offline Player is not available to play')
-            if 'offline' in phrase:
-                return phrase, CPSMatchLevel.GENERIC
-            elif 'locally' in phrase:
-                return phrase, CPSMatchLevel.GENERIC
-            else:
-                return None
-        """
 
         offline_specified = 'offline' in phrase or 'locally' in phrase
         bonus = 0.1 if offline_specified else 0.0
@@ -314,14 +304,16 @@ class PlayLocallySkill(CommonPlaySkill):
                 else:
                     # "resume playback"
                     level = CPSMatchLevel.GENERIC
-                    phrase += ' offline'
-            else:
-                #Don't know what you're telling me, CPS! I'll just roll with it.
+                    phrase += ' offline' #put 'offline' back since we cut it off for processing
+            else: #Just roll with it and play something random if no matches and CPS returns to us
                 self.log.warning('Unexpected Offline Player type: '
                                  '{}'.format(data.get('type')))
                 level = CPSMatchLevel.GENERIC
 
+            #DEBUGGING
+            self.log.info("Phrase: " + str(phrase) + "-- Level:" + str(level) + "-- Data: " + str(data))
             return phrase, level, data
+
         else:
             #none of the queries had a high enough confidence match
             self.log.debug('Couldn\'t find anything to play')
@@ -329,8 +321,7 @@ class PlayLocallySkill(CommonPlaySkill):
     def continue_playback(self, phrase, bonus):
         #user says, "Play offline"
         phrase = phrase.strip()
-        if phrase == 'offline' or phrase == 'locally' or
-        phrase == "offline music" or phrase == "local music":
+        if phrase == 'offline' or phrase == 'locally' or phrase == "offline music" or phrase == "local music":
             return (1.0,
                     {
                         'data': None,
@@ -456,7 +447,7 @@ class PlayLocallySkill(CommonPlaySkill):
 
         Returns: Tuple with confidence and data or NOTHING_FOUND
         """
-        data, confidence = self.songs_database.search_artists(artist.to_lower)
+        data, confidence = self.song_database.search_artists(artist.lower())
 
         if data:
             confidence = min(confidence, 1.0)
@@ -491,9 +482,15 @@ class PlayLocallySkill(CommonPlaySkill):
             artist_search = "any_artist"
 
         data, confidence = self.song_database.search_albums(album_search, artist_search)
-
+        
         if data:
-            better_confidence = best_confidence(data, album_search)
+            first_song_info = self.song_database.get_song_info(data)
+            if first_song_info:
+                album_title = first_song_info['album']
+            else:
+                album_title = 'no title'
+
+            better_confidence = best_confidence(album_title, album_search)
             # ^ see if confidence improves when parentheses removed
             # "'Hello Nasty ( Deluxe Version/Remastered 2009" as "Hello Nasty")
             if better_confidence > confidence:
@@ -549,7 +546,7 @@ class PlayLocallySkill(CommonPlaySkill):
             artist_search = "any_artist"
 
         data, confidence = self.song_database.search_tracks(song_search, artist_search)
-        if data and len(data['tracks']) > 0:
+        if data: # and len(data['tracks']) > 0:
             self.log.debug("Matched {} with {}% confidence.".format(data, confidence * 100))
             return (confidence,
                     {'data': data, 'name': None, 'type': 'track'})
@@ -563,11 +560,13 @@ class PlayLocallySkill(CommonPlaySkill):
                 self.acknowledge()
                 self.resume()
             elif data['type'] == 'playlist':
-                self.start_playlist_playback( data['name'],
+                self.start_playlist_playback(data['name'],
                                              data['data'])
             else:  # artist, album track
                 self.log.info('playing {}'.format(data['type']))
-                self.play(data=data['data'], data_type=data['type'])
+                song_data = data['data']
+                data_type = data['type']
+                self.play(song_data, data_type)
             self.enable_playing_intents()
             if data.get('type') and data['type'] != 'continue':
                 self.last_played_type = data['type']
@@ -576,14 +575,16 @@ class PlayLocallySkill(CommonPlaySkill):
         except PlaylistNotFoundError:
             self.speak_dialog('PlaybackFailed',
                               {'reason': self.translate('PlaylistNotFound')})
+        # DEBUGGING """
+        #try:
+        #    self.audio_service.play(self.song_database.get_random_song(), self.preferred_service, self.repeat)
         except Exception as e:
             self.log.exception(str(e))
             self.speak_dialog('PlaybackFailed', {'reason': str(e)})
 
     def create_intents(self):
         """Setup the spotify intents."""
-        intent = IntentBuilder('').require('OfflinePlayer').require('Search') \ #why is this \ here? did I put it there?
-                                  .require('For')
+        intent = IntentBuilder('').require('OfflinePlayer').require('Search').require('For')
         self.register_intent(intent, self.search_music)
         self.register_intent_file('ShuffleOn.intent', self.shuffle_on)
         self.register_intent_file('ShuffleOff.intent', self.shuffle_off)
@@ -617,8 +618,8 @@ class PlayLocallySkill(CommonPlaySkill):
             self.log.info(u'Offline_play')
             if files != None:
                 self.audio_service.play(files, self.preferred_service, self.repeat)
-            else:
-                self.resume()
+            """else:
+                self.resume()"""
             self.start_monitor()
 
         except Exception as e:
@@ -637,7 +638,7 @@ class PlayLocallySkill(CommonPlaySkill):
             self.log.info('No playlist found')
             raise PlaylistNotFoundError
 
-    def play(self, data, data_type='track', genre_name=None):
+    def play(self, song_list, data_type='track', genre_name=None):
         """
         Plays the provided data in the manner appropriate for 'data_type'
         If the type is 'genre' then genre_name should be specified to populate
@@ -650,7 +651,8 @@ class PlayLocallySkill(CommonPlaySkill):
         that genre to play a selection similar to it.
 
         Args:
-            data (dict):        Data returned by self.song_database.search)
+            song_list (list):        Data returned by self.song_database.search. 
+                                A list of song files
             data_type (str):    The type of data contained in the passed-in
                                 object. 'saved_tracks', 'track', 'album',
                                 or 'genre' are currently supported.
@@ -659,44 +661,52 @@ class PlayLocallySkill(CommonPlaySkill):
         """
         try:
             if data_type == 'saved_tracks':
-                # Grab 200 random songs
                 items = self.song_database.saved_tracks
                 self.speak_dialog('ListeningToSavedSongs')
                 time.sleep(2)
                 self.offline_player_play(items)
-            elif data_type == 'track':
-                song_info = self.song_database.get_song_info(data)
-                song = song_info['title']
-                artist = song_info['artist']
-                dir = song_info['dir']
 
+            elif data_type == 'track':
+                song_info = self.song_database.get_song_info(song_list)
+                if song_info:
+                    song = song_info['title']
+                    artist = song_info['artist']
+                    dir = song_info['dir']
+
+                else: #If no specific choice, play something random
+                    song = "random"
+                    artist = "random"
+                    dir = self.song_database.get_random_song_list()
                 self.speak_dialog('ListeningToSongBy',
                                   data={'tracks': song,
                                         'artist': artist})
                 time.sleep(2)
+                self.offline_player_play(song_list)
 
-                self.offline_player_play(dir)
             elif data_type == 'artist':
-                (artist, song_files) = get_artist_info(data)
+                (artist, song_list) = self.song_database.get_artist_info(song_list)
                 self.speak_dialog('ListeningToArtist',
                                   data={'artist': artist})
                 time.sleep(2)
-                self.offline_player_play(song_files)
+                self.offline_player_play(song_list)
+
             elif data_type == 'album':
-                (album, artists, song_files) = get_album_info(data)
+                #pass the first song
+                song_info = self.song_database.get_song_info(song_list[0])
                 self.speak_dialog('ListeningToAlbumBy',
-                                  data={'album': album,
-                                        'artist': artists})
+                                  data={'album': song_info.get('album'),
+                                        'artist': song_info.get('artist')})
                 time.sleep(2)
-                self.offline_player_play(song_files)
+                self.offline_player_play(song_list)
+
             elif data_type == 'genre':
-                genre_name, artists, song_files = self.song_database.get_genre_info(data)
-                random.shuffle(song_files)
-                data = {'genre': genre_name, 'track': song_titles,
-                        'artist': artists}
+                genre_name = self.song_database.get_genre_name(song_list)
+                self.log.info("Shuffling songs in ", genre_name)
+                random.shuffle(song_list)
                 self.speak_dialog('ListeningToGenre', genre_name)
                 time.sleep(2)
-                self.offline_player_play(song_files)
+                self.offline_player_play(song_list)
+
             else:
                 self.log.error('wrong data_type')
                 raise ValueError("Invalid type")
@@ -717,9 +727,9 @@ class PlayLocallySkill(CommonPlaySkill):
         res = None
         if search_type == 'album' and len(query.split('by')) > 1:
             title, artist = query.split('by')
-            result = self.offline_player.search(title, type=search_type)
+            result = self.song_database.search(title, type=search_type)
         else:
-            result = self.offline_player.search(query, type=search_type)
+            result = self.song_database.search(query, type=search_type)
 
         if search_type == 'album':
             if len(result['albums']['items']) > 0:
@@ -781,12 +791,12 @@ class PlayLocallySkill(CommonPlaySkill):
 
     def song_info(self, message):
         """ Speak song info. """
-        status = self.audioservice.track_info()
+        status = self.audio_service.track_info()
         self.speak_dialog('CurrentSong', {'song': status['title'], 'artist': status['artist']})
 
     def album_info(self, message):
         """ Speak album info. """
-        status = self.audioservice.track_info()
+        status = self.audio_service.track_info()
         if self.last_played_type == 'album':
             self.speak_dialog('CurrentAlbum', {'album': status['album']})
         else:
@@ -794,14 +804,13 @@ class PlayLocallySkill(CommonPlaySkill):
 
     def artist_info(self, message):
         """ Speak artist info. """
-        status = self.audioservice.track_info()
+        status = self.audio_service.track_info()
         self.speak_dialog('CurrentArtist', {'artist': status['artist']})
 
     def __pause(self):
         # if playback was started by the skill
         if self.audio_service:
             self.log.info('Pausing Music Player...')
-            self.audio_service.pause()
 
     def pause(self, message=None):
         """ Handler for playback control pause. """
@@ -812,20 +821,16 @@ class PlayLocallySkill(CommonPlaySkill):
         """ Handler for playback control resume. """
         # if playback was started by the skill
         if self.audio_service:
-            self.log.info('Resume Music Player')
-            try:
-                self.audio_service.resume()
-            except: #if nothing to resume, just get something random
-                self.play(self.song_database.get_random_song())
+            self.log.info('Resuming Music Player')
 
     def next_track(self, message):
         """ Handler for playback control next. """
         # if playback was started by the skill
         if self.audio_service:
             self.log.info('Next track')
-            self.audio_service.next()
             self.start_monitor()
             return True
+            
         else:
             return False
 
@@ -834,7 +839,6 @@ class PlayLocallySkill(CommonPlaySkill):
         # if playback was started by the skill
         if self.audio_service:
             self.log.info('Previous track')
-            self.audio_service.prev()
             self.start_monitor()
             return True
         else:

@@ -1,4 +1,4 @@
-#from mycroft.util.parse import match_one, fuzzy_match
+from mycroft.util.parse import match_one, fuzzy_match
 from pathlib import Path
 import os.path
 from tinytag import TinyTag
@@ -15,7 +15,16 @@ class SongDatabase:
         self.saved_tracks = {} #TODO - make a way to load and save saved tracks
 
     def get_random_song(self):
-        return random.choice(list(tracks.values()))
+    #returns a single random song directory as a string
+        return random.choice(list(self.tracks.values()))
+
+    def get_random_song_list(self):
+    #returns a list of random song file directories
+        num_songs = len(self.tracks.values())
+        if num_songs > 400:
+            return random.sample(list(self.tracks.values()), 400)
+        return random.sample(list(self.tracks.values()), num_songs)
+
 
     def get_artists(self, song_files):
     #receives a list of song files
@@ -29,47 +38,75 @@ class SongDatabase:
     def get_playlists(self):
         return self.playlists
 
-    def get_song_info(self, song):
-        """returns the name of the artist of a known song"""
-        if self.tracks[song]:
-            tag = TinyTag.get(self.tracks[song])
-            info = {
-            'title': tag.title,
-            'artist': tag.artist,
-            'album': tag.album,
-            'album artist': tag.albumartist,
-            'genre': tag.genre,
-            'year': tag.year,
-            'dir': self.tracks[song]
-            }
-        elif song is list:
-            dirs = []
-            titles = []
-            for each in song:
-                tag = TinyTag.get(self.tracks[each])
-                titles.append(tag.title)
-                dirs.append(each)
-            info = {
-
-
-            'title': titles,
-            'dir': dirs
-            }
+    def get_song_info(self, song=None):
+        """returns the name of the artist of a known song
+        input: song title
+        return: dict of song info
+        """
+        data_type = type(song)
+        if data_type is list or data_type is tuple: #If it is a list of songs, get the info from the first song
+            return self.get_song_info(song[0])
+        if data_type is dict:
+            return self.get_song_info(song.values()[0])
         else:
-            return None
+            if song in self.tracks:
+                track_dir = self.tracks[song]
+                tag = TinyTag.get(track_dir)
+                info = {
+                'title': tag.title,
+                'artist': tag.artist,
+                'album': tag.album,
+                'album artist': tag.albumartist,
+                'genre': tag.genre,
+                'year': tag.year,
+                'dir': self.tracks[song]
+                }
+                return info
+            else:
+                #try: #try to open it as a filepath
+                tag = TinyTag.get(song)
+                info = {
+                'title': tag.title,
+                'artist': tag.artist,
+                'album': tag.album,
+                'album artist': tag.albumartist,
+                'genre': tag.genre,
+                'year': tag.year,
+                'dir': song
+                }
+                return info
+                """except:
+                    info = {
+                    'title': 'unknown',
+                    'artist': 'unknown',
+                    'album': 'unknown',
+                    'album artist': 'unknown',
+                    'genre': 'unknown',
+                    'year': 'unknown',
+                    'dir': 'unknown'
+                    }
+                    return info"""
 
     def get_artist_info(self, artist):
         #returns a tuple with artist name and
         #list of all the songs written by an artist
         return artist, self.artists[artist]
 
-    def get_album_info(self, album): #return album artist later?
-        artists = self.get_artists(self.albums[album])
-        return album, artists, self.albums[album]
+    def get_album_info(self, song_list):
+        #takes a list of song files (presumably an album)
+        if song_list is list:
+            song_tags = TinyTag.get(song_list[0])
+            album = song_tags.album
+            artist = song_tags.albumartist
 
-    def get_genre_info(self, genre):
-        artists = self.get_artists(self.genres[genre])
-        return genre, artists, self.genres[genre]
+        return album, artists, album
+
+    def get_genre_name(self, song_list):
+        if genre is list:
+            song_tags = TinyTag.get(song_list[0])
+            genre_names = song_tags.genre
+
+        return genre_name
 
     def search(self, query, type):
         if type == 'album':
@@ -83,11 +120,15 @@ class SongDatabase:
 
     def search_genres(self, query):
         match, confidence = match_one(query, self.genres)
+
         return match, confidence
 
     def search_playlists(self, query):
-        match, confidence = match_one(query, self.playlists)
-        return match, confidence
+        if self.playlists:
+            match, confidence = match_one(query, self.playlists)
+            return match, confidence
+        else:
+            return None, 0.0
 
     def search_artists(self, query):
         match, confidence = match_one(query, self.artists)
@@ -144,7 +185,7 @@ class SongDatabase:
         if confidence > 1.0:
             confidence = 1.0
 
-        return match, confidence
+        return [match], confidence
 
     def add_to_queue(self, location):
         success = False
@@ -198,10 +239,7 @@ class SongDatabase:
             del self.albums[None]
         if self.genres[None]:
             self.genres['_unknown'] = self.genres[None]
-            del self.genres[None]
-        if self.titles[None]:
-            self.title['_unknown'] = self.title[None]
-            del self.title[None]
+            del self.genres[None]        
         if self.artists[None]:
             self.artists['_unknown'] = self.artists[None]
             del self.artists[None]
