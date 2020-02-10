@@ -90,7 +90,10 @@ class SongDatabase:
     def get_artist_info(self, artist):
         #returns a tuple with artist name and
         #list of all the songs written by an artist
-        return artist, self.artists[artist]
+        if type(artist) is list or type(artist) is tuple:
+            return artist, self.artists[artist[0]]
+        else:
+            return artist, self.artists[artist]
 
     def get_album_info(self, song_list):
         #takes a list of song files (presumably an album)
@@ -276,13 +279,13 @@ class SongDatabase:
                     self.playlists[self.to_standard_title(item)] = file_path
 
         if self.albums[None]:
-            self.albums['_unknown'] = self.albums[None]
+            #self.albums['unknown album'] = self.albums[None]
             del self.albums[None]
         if self.genres[None]:
-            self.genres['_unknown'] = self.genres[None]
+            #self.genres['unknown genre'] = self.genres[None]
             del self.genres[None]        
         if self.artists[None]:
-            self.artists['_unknown'] = self.artists[None]
+            #self.artists['unknown artist'] = self.artists[None]
             del self.artists[None]
 
 
