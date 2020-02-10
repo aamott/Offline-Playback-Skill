@@ -1,5 +1,5 @@
 <!--- <img src='makeanicon.png' card_color='#40db60' width='50' height='50' style='vertical-align:bottom'/>-->
-Play local music files using Mycroft
+#Offline Music Player
 
 ## About
 This is a basic Mycroft skill allowing playback of local music.
