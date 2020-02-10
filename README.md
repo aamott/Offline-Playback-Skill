@@ -1,18 +1,14 @@
-# <img src='' card_color='#40db60' width='50' height='50' style='vertical-align:bottom'/>
+<!--- <img src='makeanicon.png' card_color='#40db60' width='50' height='50' style='vertical-align:bottom'/>-->
 Play local music files using Mycroft
 
 ## About
-This is a basic Mycroft skill allowing playback of local music files
-
-when you try to use the **Skill** on a Mycroft device.
+This is a basic Mycroft skill allowing playback of local music.
 
 ## Examples
 * "Search offline for Beethoven"
 * "Play something by Bach"
 * "Play the album Old Hits offline"
 * "Play my liked songs"
-
-## Commands
 
 ### Playing music:
 
@@ -25,9 +21,9 @@ when you try to use the **Skill** on a Mycroft device.
 * "Stop/Pause the music" - Will pause the current track
 
 ## Credits
-@forslund
-The Mycroft devs
-And now aamott (this is my first program, so pardon the errors)
+@forslund  
+The Mycroft devs  
+And now aamott (this is my first program, so pardon the errors)  
 
 ## Category
 **Music**
