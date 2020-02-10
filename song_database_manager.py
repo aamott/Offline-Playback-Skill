@@ -101,14 +101,24 @@ class SongDatabase:
 
         return album, artists, album
 
-    def get_genre_name(self, song_list):
+    def get_genre_name(self, song):
+        """Input:   song        (item(s) to get the genre of)
+           Output:  genre_name  (name of the genre OR None)"""
         if genre is list:
             song_tags = TinyTag.get(song_list[0])
             genre_names = song_tags.genre
-
+        elif genre is string:
+            song_tags = TinyTag.get(song_list)
+            genre_names = song_tags.genre
+        else:
+            return None
         return genre_name
 
     def search(self, query, type):
+        """Input:   query       (term to search for)
+                    type        ('album', 'artist', 'genre', 'track', or 'playlist')
+           Output:  match       (a list of songs in the album) OR None (if no matches found)
+                    confidence  (0.0 to 1.0)"""
         if type == 'album':
             return search_albums(query)
         elif type == 'artist':
@@ -117,13 +127,22 @@ class SongDatabase:
             return search_genres(query)
         elif type == 'track':
             return search_tracks(query)
+        elif type == 'playlist':
+            return search_playlists(query)
+        else:
+            return None, 0.0
 
     def search_genres(self, query):
+        """Input:   query       (genre to search for)
+           Output:  match       (a list of songs in the album) OR None (if no matches found)
+                    confidence  (0.0 to 1.0)"""
         match, confidence = match_one(query, self.genres)
-
         return match, confidence
 
     def search_playlists(self, query):
+        """Input:   query       (playlist to search for)
+           Output:  match       (a list of songs in the album) OR None (if no matches found)
+                    confidence  (0.0 to 1.0)"""
         if self.playlists:
             match, confidence = match_one(query, self.playlists)
             return match, confidence
@@ -131,53 +150,75 @@ class SongDatabase:
             return None, 0.0
 
     def search_artists(self, query):
+        """Input:   query       (artist name to search for)
+           Output:  match       (a list of songs in the album) OR None (if no matches found)
+                    confidence  (0.0 to 1.0)"""
         match, confidence = match_one(query, self.artists)
         return match, confidence
 
     def search_albums(self, album_name, artist = "any_artist"):
+        """Input:   album name  (to search)
+                    artist name (to improve search)
+           Output:  match       (a list of songs in the album) OR None (if no matches found)
+                    confidence  (0.0 to 1.0)"""
         #fuzzy match the album name
         match, confidence = match_one(album_name, self.albums)
 
-        #The rest of this code is for matching the artist (if available)
-        if artist != "any_artist":
-            confidences = []
-            for song in self.albums[match]:
-                tag = TinyTag.get(match)
-                artist_confidence = fuzzy_match(tag.artist, artist)
-                confidences.append(artist_confidence)
+        #artist match within album
+        if artist != "any_artist" and confidence > 0.1: #make sure there is a match. Confidence can be adjusted.
+            #Check for album artist match
+            tag = TinyTag.get(match[0])
+            artist_confidence = 0
+            if tag.albumartist:
+                artist_confidence = fuzzy_match(tag.albumartist, artist)
 
-            #Choose the best artist from the songs and add a bonus
-            max_artist_confidence = max(confidences)
-            if max_artist_confidence > 0.5:
-                confidence += max_artist_confidence / 2
+            # check for artist match on each song
+            if artist_confidence < 0.7:
+                confidences = []
+                for song in match:
+                    tag = TinyTag.get(match)
+                    if tag.artist:
+                        artist_confidence = fuzzy_match(tag.artist, artist)
+                        confidences.append(artist_confidence)
+                #Choose the best artist from the songs
+                if confidences:
+                    max_artist_confidence = max(confidences)
+
+                    #Add bonus confidence if the artist matches
+                    if max_artist_confidence > 0.6:
+                        confidence += max_artist_confidence / 2
+
             else:
-                #search again, but this time with "by {}".format(artist)
+                #search again, but this time with "by" + artist
                 # Fixes problems with "by" in song name.
                 # Ex. "Cake by the ocean floor"
-                possible_match, possible_confidence = match_one(poss_album_name + " by " + artist, self.albums)
+                possible_match, possible_confidence = match_one(album_name + " by " + artist, self.albums)
 
                 if possible_confidence > confidence:
                     match = possible_match
                     confidence = possible_confidence
 
+            #confidence should max at 1.0
             if confidence > 1.0:
                 confidence = 1.0
 
         return match, confidence
 
+
     def search_tracks(self, track_name, artist = "any_artist"):
         match, confidence = match_one(track_name, self.tracks)
 
         #The rest of this code is to check artists
-        if artist != "any_artist":
-            tag = TinyTag.get(self.tracks[match])
+        if artist != "any_artist" and confidence > 0.1: #make sure there is a match. Confidence can be adjusted.
+            tag = TinyTag.get(match)
+            artist_confidence = 0
             artist_confidence = fuzzy_match(tag.artist, artist)
-            if artist_confidence > 0.5:
+            if artist_confidence > 0.6:
                 confidence += artist_confidence / 2
             else:
             #search again, but this time with "by {}".format(artist)
             # Fixes problems with "by" in song name. Ex. "Cake by the ocean floor"
-                possible_match, possible_confidence = match_one(poss_album_name + " by " + artist, self.albums)
+                possible_match, possible_confidence = match_one(track_name + " by " + artist, self.albums)
                 if possible_confidence > confidence:
                     match = possible_match
                     confidence = possible_confidence
