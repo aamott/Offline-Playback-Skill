@@ -88,8 +88,9 @@ class SongDatabase:
                     return info"""
 
     def get_artist_info(self, artist):
-        #returns a tuple with artist name and
-        #list of all the songs written by an artist
+        # input:    an artist name
+        #returns:   a tuple with artist name and
+        #           list of all the songs written by that artist
         if type(artist) is list or type(artist) is tuple:
             return artist, self.artists[artist[0]]
         else:
