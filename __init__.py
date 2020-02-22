@@ -95,11 +95,10 @@ def status_info():
     return "I don't think this should be here"
 
 
-class PlayLocallySkill(CommonPlaySkill):
-    """But now we're making it play locally with Amarok or something"""
+class OfflinePlaybackSkill(CommonPlaySkill):
 
     def __init__(self):
-        super(PlayLocallySkill, self).__init__()
+        super(OfflinePlaybackSkill, self).__init__()
         self.song_database = SongDatabase()
         self.idle_count = 0
         self.ducking = False
@@ -144,12 +143,7 @@ class PlayLocallySkill(CommonPlaySkill):
         # Set up music service stuff
         self.audio_service = AudioService(self.bus)
         self.song_database.load_database()
-        self.preferred_service = 'vlc' # TODO-- Hopefully we can figure out how to implement this. more music file types
 
-
-
-        #info for use later. Will be removed later on
-        self.log.info("#####################backends:"+ str(self.audio_service.available_backends()))
 
 
     ######################################################################
@@ -177,7 +171,7 @@ class PlayLocallySkill(CommonPlaySkill):
             return
 
         active = self.enclosure.display_manager.get_active()
-        if not active == '' or active == 'PlayLocallySkill':
+        if not active == '' or active == 'OfflinePlaybackSkill':
             # No activity, start to fall asleep
             self.idle_count += 1
 
@@ -575,9 +569,7 @@ class PlayLocallySkill(CommonPlaySkill):
         except PlaylistNotFoundError:
             self.speak_dialog('PlaybackFailed',
                               {'reason': self.translate('PlaylistNotFound')})
-        # DEBUGGING """
-        #try:
-        #    self.audio_service.play(self.song_database.get_random_song(), self.preferred_service, self.repeat)
+
         except Exception as e:
             self.log.exception(str(e))
             self.speak_dialog('PlaybackFailed', {'reason': str(e)})
@@ -868,11 +860,11 @@ class PlayLocallySkill(CommonPlaySkill):
         self.stop_monitor()
 
         # Do normal shutdown procedure
-        super(PlayLocallySkill, self).shutdown()
+        super(OfflinePlaybackSkill, self).shutdown()
 
 
 def create_skill():
-    return PlayLocallySkill()
+    return OfflinePlaybackSkill()
 
 # WORKING COMMANDS:
 # play locally

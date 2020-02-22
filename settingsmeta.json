@@ -2,20 +2,20 @@
     "skillMetadata": {
         "sections": [
             {
-                "name": "Default Player",
-                "fields": [
-                    {
-                        "type": "label",
-                        "value": "",
-                        "label": "Later on, we will try to use this to let you choose your own default player in case you don''t want to use the default<p/>"
-                    },
-                    {
-                        "name": "AppName",
-                        "type": "text",
-                        "label": "Location of executable (or whatever you would type into the terminal to launch it)",
-                        "value": "",
-                        "placeholder": "executable file"
-                    },
+            "name": "Music Directory",
+            "fields": [
+                {
+                    "type": "label",
+                    "value": "",
+                    "label": "Later on, we will use this to set a custom music directory. Default: ~/Music<p/>"
+                },
+                {
+                    "name": "AppName",
+                    "type": "text",
+                    "label": "Location of executable (or whatever you would type into the terminal to launch it)",
+                    "value": "",
+                    "placeholder": "executable file"
+                },
           {
             "type": "label",
             "value": "",
@@ -25,28 +25,6 @@
             "name": "Music Player",
             "type": "oauth",
             "value": 1
-          }
-        ]
-      },
-      {
-        "name": "Device settings",
-        "fields": [
-          {
-            "type": "label",
-            "value": "",
-            "label": "Playback normally occurs using Mycroft's speaker.<p/>"
-          },
-          {
-            "type": "label",
-            "value": "",
-            "label": "Pause remote music when Mycroft is listening or talking.<p/>"
-          },
-          {
-            "name": "use_ducking",
-            "type": "checkbox",
-            "label": "Auto-pause",
-            "value": "false",
-            "placeholder": ""
           }
         ]
       }
