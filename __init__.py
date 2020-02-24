@@ -114,7 +114,8 @@ class OfflinePlaybackSkill(CommonPlaySkill):
         self.use_ducking = self.settings.get('use_ducking', False) #check that this line works
 
         self.repeat = False #TODO: Make this changeable
-        self.shuffle = False #TODO: implement shuffle
+        self.shuffle = True #TODO: implement shuffle
+        self.preferred_service = "vlc" #Changing this doesn't seem to do anything yet
         self.queue = {} # involved in shuffle
 
         
