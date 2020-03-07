@@ -6,6 +6,7 @@ import random
 
 class SongDatabase:
     def __init__(self, music_directory = str(Path.home()) + "/Music"):
+        #self.directory = music_directory
         self.playlists = {}
         self.artists = {}
         self.albums = {}

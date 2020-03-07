@@ -24,6 +24,7 @@ from mycroft.skills.core import intent_handler
 from mycroft.util.parse import match_one, fuzzy_match
 from mycroft.messagebus import Message
 from adapt.intent import IntentBuilder
+from pathlib import Path
 
 #extras
 import sys
@@ -118,8 +119,6 @@ class OfflinePlaybackSkill(CommonPlaySkill):
         self.preferred_service = "vlc" #Changing this doesn't seem to do anything yet
         self.queue = {} # involved in shuffle
 
-        
-
 
     def translate_regex(self, regex):
         """If the regex is not already in regexes,
@@ -140,10 +139,18 @@ class OfflinePlaybackSkill(CommonPlaySkill):
         self.add_event('mycroft.audio.service.prev', self.prev_track)
         self.add_event('mycroft.audio.service.pause', self.pause)
         self.add_event('mycroft.audio.service.resume', self.resume)
+
+        self.directory = self.settings.get("music directory")
+        if self.directory == "":
+            self.directory = "~/Music"
+        if self.directory.startswith('~'):
+            self.directory = str(Path.home()) + self.directory[1:]
+            
+        self.log.info("Music directory set to '{}'".format(self.directory))
         
         # Set up music service stuff
         self.audio_service = AudioService(self.bus)
-        self.song_database.load_database()
+        self.song_database.load_database(self.directory)
 
 
 

@@ -10,22 +10,12 @@
                     "label": "Later on, we will use this to set a custom music directory. Default: ~/Music<p/>"
                 },
                 {
-                    "name": "AppName",
+                    "name": "music directory",
                     "type": "text",
-                    "label": "Location of executable (or whatever you would type into the terminal to launch it)",
-                    "value": "",
-                    "placeholder": "executable file"
-                },
-          {
-            "type": "label",
-            "value": "",
-            "label": "Click the Save button<p/>"
-          },
-          {
-            "name": "Music Player",
-            "type": "oauth",
-            "value": 1
-          }
+                    "label": "Default: ~/Music",
+                    "value": "~/Music",
+                    "placeholder": "Music directory"
+                }
         ]
       }
     ]
