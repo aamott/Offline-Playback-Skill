@@ -20,6 +20,10 @@ This is a basic Mycroft skill allowing playback of local music.
 * "Play the next/previous song" - Will skip the track either forward or backwards, respectively
 * "Stop/Pause the music" - Will pause the current track
 
+### TODO
+* Implement a better song database manager (that doesn't have to scan the whole music directory every startup)
+* Detect and scan USB Drive insert
+
 ## Credits
 @forslund  
 The Mycroft devs  
