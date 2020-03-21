@@ -10,7 +10,7 @@
                     "label": "Later on, we will use this to set a custom music directory. Default: ~/Music<p/>"
                 },
                 {
-                    "name": "music directory",
+                    "name": "Music Directory",
                     "type": "text",
                     "label": "Default: ~/Music",
                     "value": "~/Music",
